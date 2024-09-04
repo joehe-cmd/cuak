@@ -1,12 +1,7 @@
 import discord
 from discord.ext import commands
 import random
-import os
-from dotenv import load_dotenv
 
-# Carrega as variáveis de ambiente do arquivo .env
-load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -255,4 +250,4 @@ async def ajuda(ctx):
     await ctx.send(embed=embed)
 
 
-bot.run(TOKEN)
+bot.run("YOUR_TOKEN_HERE")
