@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands
 import random
+import time
+import re
 
 intents = discord.Intents.default()
 intents.members = True
@@ -39,17 +41,16 @@ async def on_reaction_add(reaction, user):
         await user.add_roles(role)
 
 # ID do canal onde a mensagem de boas-vindas será enviada
-WELCOME_CHANNEL_ID = 1280162832578514986  # Substitua pelo ID do seu canal de boas-vindas
-AUTOROLE_ID = 1280194449942646868  # Substitua pelo ID do cargo desejado
+WELCOME_CHANNEL_ID = 1281221106270998665  # Substitua pelo ID do seu canal de boas-vindas
+AUTOROLE_ID = 1281221056618827810  # Substitua pelo ID do cargo desejado
 
 @bot.event
 async def on_member_join(member):
     print(f'{member} acabou de entrar no servidor.')  # Mensagem de debug
-    await bot.wait_until_ready()  # Garante que o bot esteja completamente inicializado
     await send_welcome_message(member)
 
 async def send_welcome_message(member):
-    channel = bot.get_channel(WELCOME_CHANNEL_ID)
+    channel = bot.get_channel(WELCOME_CHANNEL_ID)  # Certifique-se de que WELCOME_CHANNEL_ID está definido
     
     if channel is not None:
         print(f'Canal encontrado: {channel.name}')  # Mensagem de debug
@@ -66,14 +67,13 @@ async def send_welcome_message(member):
     else:
         print("Canal de boas-vindas não encontrado.")
 
- # Atribuição de cargo
-    role = member.guild.get_role(AUTOROLE_ID)
+    # Atribuição de cargo
+    role = member.guild.get_role(AUTOROLE_ID)  # Certifique-se de que AUTOROLE_ID está definido
     if role is not None:
         await member.add_roles(role)
         print(f"Cargo '{role.name}' foi atribuído a {member.name}.")
     else:
         print("Cargo não encontrado.")
-
 
 @bot.command(name='setautorole')
 @commands.has_permissions(administrator=True)
@@ -82,6 +82,88 @@ async def set_autorole(ctx, role: discord.Role):
     AUTOROLE_ID = role.id
     await ctx.send(f"O cargo {role.name} foi definido como Autorole.")
     print(f"Autorole definido para o cargo '{role.name}'.")
+
+# Comando de teste
+@bot.command(name="testwelcome")
+@commands.has_permissions(administrator=True)
+async def test_welcome(ctx, member: discord.Member = None):
+    """Comando para testar o boas vindas"""
+    
+    if member is None:
+        member = ctx.guild.owner    
+
+    welcome_channel = await send_welcome_message(member)
+
+    await send_welcome_message(member)
+    await ctx.send(f"Mensagem de boas-vindas de teste enviada para {welcome_channel.mention}.")
+
+@test_welcome.error
+async def test_welcome_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("Você não tem permissão para usar o comando!")
+
+# um dicionario simples para armazenar XP de usuarios
+xp_db = {}
+
+# dicionario para armazenar o tempo da ultima mensagem de cada user
+last_message_time = {}
+
+# quantidade de XP por mensagem
+XP_POR_MENSAGEM = 1
+
+# tempo minimo entre mensagens (em segundos)
+TIME_WINDOW = 10
+
+@bot.event
+async def on_message(message):
+    # ignora mensagens do bot
+    if message.author == bot.user:
+        return
+    
+    if message.content.startswith(bot.command_prefix):
+        await bot.process_commands(message)
+        return
+    
+    user_id = message.author.id
+    current_time = time.time()
+
+    # verifica se a mensagem é considerada spam
+    if user_id in last_message_time:
+        if current_time - last_message_time[user_id] < TIME_WINDOW:
+            return # ignora se o user está enviando muito rapido
+
+    if len(message.content) < 5:
+        return
+
+    # adciona XP ao user que enviou a mensagem
+    if message.author.id not in xp_db:
+        xp_db[message.author.id] = 0
+    xp_db[message.author.id] += XP_POR_MENSAGEM
+
+    last_message_time[user_id] = current_time
+
+    await bot.process_commands(message)
+
+
+    # enviar uma mensagem de XP ganho
+    # await message.channel.send(f'{message.author.mention} ganhou {XP_POR_MENSAGEM} XP! Total de XP: {xp_db[message.author.id]}') 
+
+@bot.command(name='zerarxp')
+@commands.has_permissions(administrator=True)    
+async def zerarxp(ctx, membro: discord.Member):
+    """zerar xp do user"""
+    if membro.id in xp_db:
+        xp_db[membro.id] = 0
+        await ctx.send(f'O XP de {membro.mention} foi zerado')
+    else:
+        await ctx.send(f'{membro.mention} não tem XP registrado.')
+
+@bot.command(name='xp')
+async def xp(ctx):
+    """Comando para checar o Xp do user."""
+    if ctx.author.id not in xp_db:
+        xp_db[ctx.author.id] = 0
+    await ctx.send(f'{ctx.author.mention}, você tem {xp_db[ctx.author.id]} de XP!')
 
 @bot.command()
 async def dado(ctx, *, dice: str):
@@ -106,14 +188,6 @@ async def dado(ctx, *, dice: str):
         await ctx.send("Uso incorreto. Use a notação XdY, onde X é o número de dados e Y é o número de lados.")
     except Exception as e:
         await ctx.send(f"Erro: {e}")
-
-# Comando de teste
-@bot.command(name="testwelcome")
-async def test_welcome(ctx, member: discord.Member):
-    """Comando para testar o boas vindas"""
-    await send_welcome_message(member)
-    await ctx.send(f"Mensagem de boas-vindas de teste enviada para {member.mention}.")
-
 
 @bot.command(name="oi")
 async def send_hello(ctx):
@@ -239,15 +313,16 @@ async def ajuda(ctx):
 
     # Adiciona os comandos ao embed
     for command in bot.commands:
-        # Adiciona cada comando com sua descrição (se houver)
-        embed.add_field(
-            name=f'!{command.name}',
-            value=command.help or 'Sem descrição',
-            inline=False
-        )
+        if not command.hidden:  # Evita mostrar comandos ocultos
+            # Adiciona cada comando com sua descrição (se houver)
+            embed.add_field(
+                name=f'!{command.name}',
+                value=command.help or 'Sem descrição',
+                inline=False
+            )
 
-    # Envia o embed com a lista de comandos
+    # Envia o embed como resposta no canal
     await ctx.send(embed=embed)
 
-
-bot.run("YOUR_TOKEN_HERE")
+        
+bot.run("TOKEN")
